@@ -16,7 +16,7 @@ button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
 #log{max-height:22vh;overflow:auto;background:#161619}.li{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #26262b;font-size:13px}.li span{flex:1}.li button{padding:4px 10px;font-size:12px;background:#6b2530}
 #setup{position:fixed;inset:0;background:#111;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;z-index:9}
 </style></head><body>
-<div id="setup"><div><h2>Scanner not set up</h2><p>Open the full link that HR gave you (menu: Mobile App Access &gt; Scanner Page Link).</p></div></div>
+<div id="setup"><div style="width:100%;max-width:420px"><h2>Scanner setup</h2><p>Paste the full link that HR gave you (menu: Mobile App Access &gt; Scanner Page Link).</p><textarea id="paste" rows="4" style="width:100%;padding:10px;border-radius:8px;border:0;font-size:14px" placeholder="Paste link here"></textarea><button onclick="setupGo()" style="width:100%;margin-top:10px">Save &amp; start</button><p id="setErr" style="color:#ff6b6b"></p></div></div>
 <div class="top"><b>📷 Scanned today: <span id="cnt">0</span></b><span id="dayLbl" style="font-size:13px;opacity:.8"></span></div>
 <div class="chips" id="chips"></div>
 <div class="cam"><video id="v" playsinline muted></video><div class="frame"><div></div></div></div>
@@ -27,8 +27,20 @@ button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
 <script>
 var API='',KEY='',SUP='',day=0,count=0,last='',lastAt=0,busy={},det=null,cv=document.createElement('canvas'),run=false;
 function ld(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
-(function(){var h=location.hash.slice(1);if(h){var i=h.lastIndexOf('|');if(i>0){sv('api',decodeURIComponent(h.slice(0,i)));sv('key',h.slice(i+1));try{history.replaceState(null,'',location.pathname)}catch(e){}}}
-API=ld('api');KEY=ld('key');if(!API||!KEY){document.getElementById('setup').style.display='flex';return;}init();})();
+function parseLink(t){
+  t=String(t||'').trim();var i=t.indexOf('#');if(i>=0)t=t.slice(i+1);
+  try{t=decodeURIComponent(t)}catch(e){}
+  t=t.replace(/%7C/gi,'|');var j=t.lastIndexOf('|');if(j<=0)return false;
+  var a=t.slice(0,j).trim(),k=t.slice(j+1).trim();
+  if(a.indexOf('https://script.google.com/')!==0||!k)return false;
+  sv('api',a);sv('key',k);return true;
+}
+function setupGo(){var v=document.getElementById('paste').value;if(parseLink(v)){location.href=location.pathname;}else{document.getElementById('setErr').textContent='This does not look like the full link. Copy it again from the HR menu.';}}
+(function(){
+  if(location.hash.length>1){parseLink(location.hash);try{history.replaceState(null,'',location.pathname)}catch(e){}}
+  API=ld('api');KEY=ld('key');
+  if(!API||!KEY){document.getElementById('setup').style.display='flex';return;}init();
+})();
 function call(p){var u=API+'?key='+encodeURIComponent(KEY);for(var k in p)u+='&'+k+'='+encodeURIComponent(p[k]);return fetch(u,{redirect:'follow'}).then(function(r){return r.json()});}
 function res(t,c,s){var e=document.getElementById('res');e.className=c;e.innerHTML=t+(s?'<small>'+s+'</small>':'');}
 function beep(ok){try{var a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=ok?880:220;g.gain.value=.2;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+(ok?.12:.35))}catch(e){}try{navigator.vibrate&&navigator.vibrate(ok?60:[120,60,120])}catch(e){}}
