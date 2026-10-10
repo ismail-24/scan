@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Varieties Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#111;color:#fff;display:flex;flex-direction:column;height:100dvh}
+.top{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#1b1b1f}.top b{font-size:17px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#1b1b1f}.chip{flex:none;padding:8px 12px;border-radius:20px;background:#2b2b31;font-size:13px;font-weight:700;border:2px solid transparent}.chip.on{background:#6f42c1;border-color:#b197fc}
+.cam{position:relative;flex:1;min-height:0;background:#000}video{width:100%;height:100%;object-fit:cover}
+.frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}.frame div{width:62%;aspect-ratio:1;border:3px solid #b197fc;border-radius:16px}
+#res{padding:14px;text-align:center;font-size:18px;font-weight:800;min-height:70px;background:#222;transition:background .15s}
+#res.ok{background:#146c43}#res.warn{background:#a36a00}#res.bad{background:#a52834}#res small{display:block;font-size:13px;font-weight:600;opacity:.9;margin-top:3px}
+.row{display:flex;gap:8px;padding:8px 10px;background:#1b1b1f}input,button{font-size:15px;border:0;border-radius:8px;padding:10px}input{flex:1;min-width:0;text-transform:uppercase}input#hrs{flex:none;width:70px;text-transform:none;text-align:center}
+button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
+#log{max-height:22vh;overflow:auto;background:#161619}.li{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #26262b;font-size:13px}.li span{flex:1}.li button{padding:4px 10px;font-size:12px;background:#6b2530}
+#setup{position:fixed;inset:0;background:#111;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;z-index:9}
+</style></head><body>
+<div id="setup"><div><h2>Scanner not set up</h2><p>Open the full link that HR gave you (menu: Mobile App Access &gt; Scanner Page Link).</p></div></div>
+<div class="top"><b>📷 Scanned today: <span id="cnt">0</span></b><span id="dayLbl" style="font-size:13px;opacity:.8"></span></div>
+<div class="chips" id="chips"></div>
+<div class="cam"><video id="v" playsinline muted></video><div class="frame"><div></div></div></div>
+<div id="res">Starting camera…</div>
+<div class="row"><span style="align-self:center;font-size:13px">Hours</span><input id="hrs" type="number" value="9" step="0.5" min="1" max="24">
+<input id="code" placeholder="Type / scan code" autocapitalize="characters" autocomplete="off"><button onclick="manual()">OK</button><label class="g" style="padding:10px 12px;border-radius:8px;background:#0d6efd;font-weight:700">📸<input type="file" accept="image/*" capture="environment" style="display:none" onchange="photo(this)"></label></div>
+<div id="log"></div>
+<script>
+var API='',KEY='',SUP='',day=0,count=0,last='',lastAt=0,busy={},det=null,cv=document.createElement('canvas'),run=false;
+function ld(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+(function(){var h=location.hash.slice(1);if(h){var i=h.lastIndexOf('|');if(i>0){sv('api',decodeURIComponent(h.slice(0,i)));sv('key',h.slice(i+1));try{history.replaceState(null,'',location.pathname)}catch(e){}}}
+API=ld('api');KEY=ld('key');if(!API||!KEY){document.getElementById('setup').style.display='flex';return;}init();})();
+function call(p){var u=API+'?key='+encodeURIComponent(KEY);for(var k in p)u+='&'+k+'='+encodeURIComponent(p[k]);return fetch(u,{redirect:'follow'}).then(function(r){return r.json()});}
+function res(t,c,s){var e=document.getElementById('res');e.className=c;e.innerHTML=t+(s?'<small>'+s+'</small>':'');}
+function beep(ok){try{var a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=ok?880:220;g.gain.value=.2;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+(ok?.12:.35))}catch(e){}try{navigator.vibrate&&navigator.vibrate(ok?60:[120,60,120])}catch(e){}}
+function esc(s){return String(s||'').replace(/[&<>]/g,function(x){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[x]})}
+function init(){
+  call({api:'init'}).then(function(r){
+    if(!r.ok){res('❌ '+esc(r.message),'bad');return;}
+    day=r.day;document.getElementById('dayLbl').textContent='Day '+day;
+    var h='',cur=ld('sup');if(r.supervisors.indexOf(cur)<0)cur='';
+    r.supervisors.forEach(function(s){h+='<div class="chip'+(s===cur?' on':'')+'" onclick="pick(this,\''+s+'\')">'+esc(s)+'</div>';});
+    document.getElementById('chips').innerHTML=h;SUP=cur;
+    res(SUP?'Ready — scan a card':'Choose your name above','');startCam();
+  }).catch(function(){res('❌ No connection','bad');});
+}
+function pick(el,s){SUP=s;sv('sup',s);[].forEach.call(document.querySelectorAll('.chip'),function(c){c.classList.remove('on')});el.classList.add('on');res('Ready — scan a card','');}
+function startCam(){
+  if(!navigator.mediaDevices){res('Camera not available. Use 📸 or type the code.','warn');return;}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(function(st){
+    var v=document.getElementById('v');v.srcObject=st;v.play();if(window.BarcodeDetector){try{det=new BarcodeDetector({formats:['qr_code']})}catch(e){}}run=true;loop();
+  }).catch(function(){res('Camera permission denied. Allow the camera in the browser settings, or use 📸 / type the code.','warn');});
+}
+function loop(){
+  if(!run)return;var v=document.getElementById('v');
+  if(v.readyState>=2&&v.videoWidth){
+    if(det)det.detect(v).then(function(r){if(r&&r.length)handle(r[0].rawValue)}).catch(function(){});
+    else if(window.jsQR){var w=Math.min(640,v.videoWidth),h=Math.round(w*v.videoHeight/v.videoWidth);cv.width=w;cv.height=h;var x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(v,0,0,w,h);var r=jsQR(x.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'dontInvert'});if(r&&r.data)handle(r.data);}
+  }
+  setTimeout(loop,180);
+}
+function manual(){var i=document.getElementById('code');handle(i.value);i.value='';}
+document.getElementById('code').addEventListener('keydown',function(e){if(e.key==='Enter')manual();});
+function photo(inp){var f=inp.files&&inp.files[0];if(!f)return;var im=new Image();im.onload=function(){var s=Math.min(1,1400/Math.max(im.width,im.height));cv.width=im.width*s;cv.height=im.height*s;var x=cv.getContext('2d');x.drawImage(im,0,0,cv.width,cv.height);var r=window.jsQR&&jsQR(x.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:'attemptBoth'});if(r&&r.data)handle(r.data);else{beep(false);res('No QR in photo','bad','Try again closer');}inp.value='';};im.src=URL.createObjectURL(f);}
+function handle(raw){
+  var code=String(raw||'').trim().toUpperCase().replace(/^VAR:/,'');if(!code)return;
+  if(!SUP){beep(false);res('Choose your name first','warn');return;}
+  var n=Date.now();if(code===last&&n-lastAt<3000)return;last=code;lastAt=n;if(busy[code])return;busy[code]=1;
+  res('⏳ Saving…','');
+  call({api:'scan',code:code,sup:SUP,hours:document.getElementById('hrs').value||9}).then(function(r){
+    delete busy[code];
+    if(r.status==='marked'){count++;document.getElementById('cnt').textContent=count;beep(true);
+      res('✅ '+esc(r.name),r.onLeave?'warn':'ok',r.onLeave?'⚠ On LEAVE today — marked as working ('+r.hours+' h)':'Present · '+r.hours+' h');addLog(r);}
+    else if(r.status==='dup'){beep(false);res('Already marked: '+esc(r.name),'warn',r.hours+' h today');}
+    else{beep(false);res('❌ '+esc(r.message||'Error'),'bad',r.name?esc(r.name):'');}
+  }).catch(function(){delete busy[code];beep(false);res('❌ No connection — scan again','bad','Nothing was saved');});
+}
+function addLog(r){
+  var d=document.createElement('div');d.className='li';d.innerHTML='<span>'+esc(r.name)+' · '+r.hours+' h</span><button>Undo</button>';
+  d.querySelector('button').onclick=function(){var b=this;b.disabled=true;call({api:'undo',code:r.code,sup:SUP}).then(function(x){if(x.ok){d.remove();count--;document.getElementById('cnt').textContent=count;last='';res('↩ Removed '+esc(r.name),'warn');}else{b.disabled=false;res('❌ '+esc(x.message),'bad');}}).catch(function(){b.disabled=false;res('❌ No connection','bad');});};
+  var l=document.getElementById('log');l.insertBefore(d,l.firstChild);
+}
+</script></body></html>
