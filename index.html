@@ -5,15 +5,16 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#111;color:#fff;display:flex;flex-direction:column;height:100dvh}
-.top{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#1b1b1f}.top b{font-size:17px}
-.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#1b1b1f}.chip{flex:none;direction:rtl;padding:8px 12px;border-radius:20px;background:#2b2b31;font-size:13px;font-weight:700;border:2px solid transparent}.chip.on{background:#6f42c1;border-color:#b197fc}
+.top{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#1b1b1f}.top b{font-size:17px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:6px 10px;background:#1b1b1f}.chip{flex:none;direction:rtl;padding:8px 12px;border-radius:20px;background:#2b2b31;font-size:13px;font-weight:700;border:2px solid transparent}.chip.on{background:#6f42c1;border-color:#b197fc}
 .cam{position:relative;flex:1;min-height:0;background:#000}video{width:100%;height:100%;object-fit:cover}
 .frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}.frame div{width:62%;aspect-ratio:1;border:3px solid #b197fc;border-radius:16px}
-#res{padding:14px;text-align:center;font-size:18px;font-weight:800;min-height:70px;background:#222;transition:background .15s}
+#res{padding:12px;text-align:center;font-size:19px;font-weight:800;min-height:64px;background:#222}
 #res.ok{background:#146c43}#res.warn{background:#a36a00}#res.bad{background:#a52834}#res small{display:block;font-size:13px;font-weight:600;opacity:.9;margin-top:3px}
+#sync{padding:5px 12px;font-size:12px;font-weight:700;background:#161619;color:#8bd5a0}#sync.w{color:#ffc107}#sync.b{color:#ff6b6b}
 .row{display:flex;gap:8px;padding:8px 10px;background:#1b1b1f}input,button{font-size:15px;border:0;border-radius:8px;padding:10px}input{flex:1;min-width:0;text-transform:uppercase}input#hrs{flex:none;width:70px;text-transform:none;text-align:center}
-button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
-#log{max-height:22vh;overflow:auto;background:#161619}.li{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #26262b;font-size:13px}.li span{flex:1}.li button{padding:4px 10px;font-size:12px;background:#6b2530}
+button{background:#198754;color:#fff;font-weight:700}
+#log{max-height:22vh;overflow:auto;background:#161619}.li{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #26262b;font-size:14px}.li span{flex:1}.li i{font-style:normal;font-size:12px;opacity:.85}.li button{padding:4px 10px;font-size:12px;background:#6b2530}.li.dup{background:#3a2e08}.li.err{background:#3a1015}
 #setup{position:fixed;inset:0;background:#111;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;z-index:9}
 </style></head><body>
 <div id="setup"><div style="width:100%;max-width:420px"><h2>Scanner setup</h2><p>Paste the full link that HR gave you (menu: Mobile App Access &gt; Scanner Page Link).</p><textarea id="paste" rows="4" style="width:100%;padding:10px;border-radius:8px;border:0;font-size:14px" placeholder="Paste link here"></textarea><button onclick="setupGo()" style="width:100%;margin-top:10px">Save &amp; start</button><p id="setErr" style="color:#ff6b6b"></p></div></div>
@@ -21,11 +22,12 @@ button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
 <div class="chips" id="chips"></div>
 <div class="cam"><video id="v" playsinline muted></video><div class="frame"><div></div></div></div>
 <div id="res">Starting camera…</div>
+<div id="sync"></div>
 <div class="row"><span style="align-self:center;font-size:13px">Hours</span><input id="hrs" type="number" value="9" step="0.5" min="1" max="24">
-<input id="code" placeholder="Type / scan code" autocapitalize="characters" autocomplete="off"><button onclick="manual()">OK</button><label class="g" style="padding:10px 12px;border-radius:8px;background:#0d6efd;font-weight:700">📸<input type="file" accept="image/*" capture="environment" style="display:none" onchange="photo(this)"></label></div>
+<input id="code" placeholder="Type / scan code" autocapitalize="characters" autocomplete="off"><button onclick="manual()">OK</button><label style="padding:10px 12px;border-radius:8px;background:#0d6efd;font-weight:700">📸<input type="file" accept="image/*" capture="environment" style="display:none" onchange="photo(this)"></label></div>
 <div id="log"></div>
 <script>
-var API='',KEY='',SUP='',day=0,TODAY='',count=0,last='',lastAt=0,busy={},det=null,cv=document.createElement('canvas'),run=false;
+var API='',KEY='',SUP='',SUPS=[],day=0,TODAY='',R={},LV={},Q=[],ITEMS=[],syncing=false,timer=null,seq=0,qs=0,last='',lastAt=0,det=null,detBusy=false,cv=document.createElement('canvas'),run=false;
 function ld(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
 function parseLink(t){
   t=String(t||'').trim();var i=t.indexOf('#');if(i>=0)t=t.slice(i+1);
@@ -43,22 +45,28 @@ function setupGo(){var v=document.getElementById('paste').value;if(parseLink(v))
 })();
 function call(p){var u=API+'?key='+encodeURIComponent(KEY);for(var k in p)u+='&'+k+'='+encodeURIComponent(p[k]);return fetch(u,{redirect:'follow'}).then(function(r){return r.json()});}
 function res(t,c,s){var e=document.getElementById('res');e.className=c;e.innerHTML=t+(s?'<small>'+s+'</small>':'');}
-function beep(ok){try{var a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=ok?880:220;g.gain.value=.2;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+(ok?.12:.35))}catch(e){}try{navigator.vibrate&&navigator.vibrate(ok?60:[120,60,120])}catch(e){}}
-function dateChg(){var v=document.getElementById('dt').value;if(!v)return;day=parseInt(v.slice(8),10);var p=v!==TODAY;document.getElementById('past').style.display=p?'inline':'none';document.getElementById('top').style.background=p?'#5a4300':'#1b1b1f';last='';res(p?'Recording for '+v:'Ready — scan a card',p?'warn':'');}
-function num(r){return r.no?'#'+esc(r.no)+' · ':'';}
 function esc(s){return String(s||'').replace(/[&<>]/g,function(x){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[x]})}
+function num(w){return w&&w[0]?'#'+esc(w[0])+' · ':'';}
+function beep(ok){try{var a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=ok?880:220;g.gain.value=.2;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+(ok?.12:.35))}catch(e){}try{navigator.vibrate&&navigator.vibrate(ok?60:[120,60,120])}catch(e){}}
 function init(){
+  try{R=JSON.parse(ld('rst')||'{}')}catch(e){R={}}
+  try{Q=JSON.parse(ld('q')||'[]')}catch(e){Q=[]}
   call({api:'init'}).then(function(r){
     if(!r.ok){res('❌ '+esc(r.message),'bad');return;}
     day=r.day;TODAY=r.today;var dt=document.getElementById('dt');dt.min=r.first;dt.max=r.last;dt.value=r.today;
-    var h='',cur=ld('sup');if(r.supervisors.indexOf(cur)<0)cur='';
-    SUPS=r.supervisors;r.supervisors.forEach(function(s,i){h+='<div class="chip'+(s===cur?' on':'')+'" onclick="pick(this,'+i+')">'+esc(s)+'</div>';});
-    document.getElementById('chips').innerHTML=h;SUP=cur;
-    res(SUP?'Ready — scan a card':'Choose your name above','');startCam();
+    var h='',cur=ld('sup');if(r.supervisors.indexOf(cur)<0)cur='';SUP=cur;SUPS=r.supervisors;
+    r.supervisors.forEach(function(s,i){h+='<div class="chip'+(s===cur?' on':'')+'" onclick="pick(this,'+i+')">'+esc(s)+'</div>';});
+    document.getElementById('chips').innerHTML=h;
+    res(SUP?'Ready — scan a card':'Choose your name above','');startCam();loadRoster();if(Q.length)kick();status();
   }).catch(function(){res('❌ No connection','bad');});
 }
-var SUPS=[];
-function pick(el,i){var s=SUPS[i];SUP=s;sv('sup',s);[].forEach.call(document.querySelectorAll('.chip'),function(c){c.classList.remove('on')});el.classList.add('on');res('Ready — scan a card','');}
+function loadRoster(){
+  call({api:'roster',day:day}).then(function(r){
+    if(!r.ok)return;R=r.w;LV={};r.lv.forEach(function(c){LV[c]=1});sv('rst',JSON.stringify(R));
+  }).catch(function(){});
+}
+function pick(el,i){SUP=SUPS[i];sv('sup',SUP);[].forEach.call(document.querySelectorAll('.chip'),function(c){c.classList.remove('on')});el.classList.add('on');res('Ready — scan a card','');}
+function dateChg(){var v=document.getElementById('dt').value;if(!v)return;day=parseInt(v.slice(8),10);var p=v!==TODAY;document.getElementById('past').style.display=p?'inline':'none';document.getElementById('top').style.background=p?'#5a4300':'#1b1b1f';last='';LV={};loadRoster();res(p?'Recording for '+v:'Ready — scan a card',p?'warn':'');}
 function startCam(){
   if(!navigator.mediaDevices){res('Camera not available. Use 📸 or type the code.','warn');return;}
   navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(function(st){
@@ -68,34 +76,75 @@ function startCam(){
 function loop(){
   if(!run)return;var v=document.getElementById('v');
   if(v.readyState>=2&&v.videoWidth){
-    if(det)det.detect(v).then(function(r){if(r&&r.length)handle(r[0].rawValue)}).catch(function(){});
-    else if(window.jsQR){var w=Math.min(640,v.videoWidth),h=Math.round(w*v.videoHeight/v.videoWidth);cv.width=w;cv.height=h;var x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(v,0,0,w,h);var r=jsQR(x.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'dontInvert'});if(r&&r.data)handle(r.data);}
+    if(det){if(!detBusy){detBusy=true;det.detect(v).then(function(r){detBusy=false;if(r&&r.length)handle(r[0].rawValue)}).catch(function(){detBusy=false});}}
+    else if(window.jsQR){var w=Math.min(560,v.videoWidth),h=Math.round(w*v.videoHeight/v.videoWidth);cv.width=w;cv.height=h;var x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(v,0,0,w,h);var r=jsQR(x.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'dontInvert'});if(r&&r.data)handle(r.data);}
   }
-  setTimeout(loop,180);
+  setTimeout(loop,90);
 }
 function manual(){var i=document.getElementById('code');handle(i.value);i.value='';}
 document.getElementById('code').addEventListener('keydown',function(e){if(e.key==='Enter')manual();});
 function photo(inp){var f=inp.files&&inp.files[0];if(!f)return;var im=new Image();im.onload=function(){var s=Math.min(1,1400/Math.max(im.width,im.height));cv.width=im.width*s;cv.height=im.height*s;var x=cv.getContext('2d');x.drawImage(im,0,0,cv.width,cv.height);var r=window.jsQR&&jsQR(x.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:'attemptBoth'});if(r&&r.data)handle(r.data);else{beep(false);res('No QR in photo','bad','Try again closer');}inp.value='';};im.src=URL.createObjectURL(f);}
+
+// ---- scan = instant (local roster); saving happens in the background in batches ----
 function handle(raw){
   var code=String(raw||'').trim().toUpperCase().replace(/^VAR:/,'');if(!code)return;
   if(!SUP){beep(false);res('Choose your name first','warn');return;}
-  var n=Date.now();if(code===last&&n-lastAt<3000)return;last=code;lastAt=n;if(busy[code])return;busy[code]=1;
-  res('⏳ Saving…','');
-  call({api:'scan',code:code,sup:SUP,day:day,hours:document.getElementById('hrs').value||9}).then(function(r){
-    delete busy[code];
-    if(r.status==='marked'){count++;document.getElementById('cnt').textContent=count;beep(true);
-      res('✅ '+num(r)+esc(r.name),r.onLeave?'warn':'ok',r.onLeave?'⚠ On LEAVE this day — marked as working':'Saved to sheet · row '+r.row);addLog(r);}
-    else if(r.status==='dup'){beep(false);res('Already marked: '+num(r)+esc(r.name),'warn','Day '+r.day);}
-    else{beep(false);res('❌ '+esc(r.message||'Error'),'bad',r.name?esc(r.name):'');}
-  }).catch(function(){delete busy[code];beep(false);res('❌ No connection — scan again','bad','Nothing was saved');});
+  var n=Date.now();if(code===last&&n-lastAt<2500)return;last=code;lastAt=n;
+  var w=R[code];
+  if(!w){beep(false);res('❌ Unknown card','bad','Updating the worker list…');loadRoster();return;}
+  var ex=ITEMS.filter(function(i){return i.code===code&&i.day===day&&i.st!=='err'&&i.st!=='dup'})[0];
+  if(ex){beep(false);res('Already marked: '+num(w)+esc(w[1]),'warn');return;}
+  var it={id:++seq,code:code,day:day,st:'pending'};ITEMS.unshift(it);Q.push({q:++qs,id:it.id,code:code,day:day,m:1});saveQ();
+  beep(true);res('✅ '+num(w)+esc(w[1]),LV[code]?'warn':'ok',LV[code]?'⚠ On LEAVE this day — marked as working':'');
+  render();kick();
 }
-function addLog(r){
-  var d=document.createElement('div');d.className='li';d.innerHTML='<span>'+num(r)+esc(r.name)+'</span><button>Undo</button>';
-  d.querySelector('button').onclick=function(){
-    var l=document.getElementById('log'),nx=d.nextSibling;d.remove();count--;document.getElementById('cnt').textContent=count;last='';res('↩ Removed '+num(r)+esc(r.name),'warn');
-    function back(m){l.insertBefore(d,nx);count++;document.getElementById('cnt').textContent=count;res('❌ Undo failed: '+esc(m),'bad','Still marked');}
-    call({api:'undo',code:r.code,sup:SUP,day:r.day}).then(function(x){if(!x.ok)back(x.message||'error');}).catch(function(){back('no connection');});
-  };
-  var l=document.getElementById('log');l.insertBefore(d,l.firstChild);
+function saveQ(){sv('q',JSON.stringify(Q));}
+function kick(){clearTimeout(timer);timer=setTimeout(sync,600);}
+function status(msg){
+  var e=document.getElementById('sync'),p=Q.length;
+  if(msg){e.className='b';e.textContent=msg;return;}
+  if(!p){e.className='';e.textContent='✓ All saved to the sheet';}else{e.className='w';e.textContent='⏳ Saving '+p+'…';}
 }
+function sync(){
+  if(syncing)return;if(!Q.length){status();return;}
+  syncing=true;var batch=Q.slice(0,40),ids={};
+  batch.forEach(function(b){ids[b.q]=1;if(b.m){var it=find(b.id);if(it&&it.st==='pending')it.st='sent';}});
+  status();
+  call({api:'batch',sup:SUP,hours:document.getElementById('hrs').value||9,items:batch.map(function(b){return b.code+':'+b.day+':'+b.m}).join(',')}).then(function(r){
+    syncing=false;
+    if(!r.ok)throw new Error(r.message||'error');
+    Q=Q.filter(function(e){return !ids[e.q]});saveQ();
+    var warn='';
+    r.results.forEach(function(x,i){
+      var b=batch[i];if(!b||!b.m||!x)return;var it=find(b.id);if(!it)return;
+      if(x.status==='marked'){it.st='saved';it.row=x.row;}
+      else if(x.status==='dup'){it.st='dup';it.msg='Already in the sheet (not changed)';warn=x.name;}
+      else{it.st='err';it.msg=x.message||x.status;warn=x.name+': '+it.msg;}
+    });
+    render();status();
+    if(warn){beep(false);res('⚠ '+esc(warn),'warn','See the list below');}
+    if(Q.length)sync();
+  }).catch(function(e){
+    syncing=false;batch.forEach(function(b){var it=b.m&&find(b.id);if(it&&it.st==='sent')it.st='pending';});
+    status('⚠ No connection — '+Q.length+' waiting, retrying…');render();clearTimeout(timer);timer=setTimeout(sync,4000);
+  });
+}
+function find(id){for(var i=0;i<ITEMS.length;i++)if(ITEMS[i].id===id)return ITEMS[i];return null;}
+function counted(){return ITEMS.filter(function(i){return i.st==='pending'||i.st==='sent'||i.st==='saved'}).length;}
+function render(){
+  document.getElementById('cnt').textContent=counted();
+  var h='';ITEMS.forEach(function(i){
+    var w=R[i.code]||['',i.code],ic=i.st==='saved'?'✓':(i.st==='dup'?'⚠':(i.st==='err'?'❌':'⏳'));
+    h+='<div class="li '+(i.st==='dup'||i.st==='err'?i.st:'')+'"><span>'+ic+' '+num(w)+esc(w[1])+(i.msg?'<br><i>'+esc(i.msg)+'</i>':'')+'</span><button onclick="undo('+i.id+')">'+(i.st==='dup'||i.st==='err'?'✕':'Undo')+'</button></div>';
+  });
+  document.getElementById('log').innerHTML=h;
+}
+function undo(id){
+  var it=find(id);if(!it)return;
+  if(it.st==='pending'){Q=Q.filter(function(e){return e.id!==id});}
+  else if(it.st==='sent'||it.st==='saved'){Q.push({q:++qs,id:0,code:it.code,day:it.day,m:0});}
+  ITEMS=ITEMS.filter(function(i){return i.id!==id});last='';saveQ();render();status();
+  if(it.st==='sent'||it.st==='saved'){res('↩ Removed '+num(R[it.code])+esc((R[it.code]||[])[1]),'warn');kick();}
+}
+window.addEventListener('beforeunload',function(e){if(Q.length){e.preventDefault();e.returnValue='';}});
 </script></body></html>
