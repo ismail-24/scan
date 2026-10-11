@@ -6,7 +6,7 @@
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#111;color:#fff;display:flex;flex-direction:column;height:100dvh}
 .top{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#1b1b1f}.top b{font-size:17px}
-.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#1b1b1f}.chip{flex:none;padding:8px 12px;border-radius:20px;background:#2b2b31;font-size:13px;font-weight:700;border:2px solid transparent}.chip.on{background:#6f42c1;border-color:#b197fc}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#1b1b1f}.chip{flex:none;direction:rtl;padding:8px 12px;border-radius:20px;background:#2b2b31;font-size:13px;font-weight:700;border:2px solid transparent}.chip.on{background:#6f42c1;border-color:#b197fc}
 .cam{position:relative;flex:1;min-height:0;background:#000}video{width:100%;height:100%;object-fit:cover}
 .frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}.frame div{width:62%;aspect-ratio:1;border:3px solid #b197fc;border-radius:16px}
 #res{padding:14px;text-align:center;font-size:18px;font-weight:800;min-height:70px;background:#222;transition:background .15s}
@@ -17,7 +17,7 @@ button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
 #setup{position:fixed;inset:0;background:#111;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;z-index:9}
 </style></head><body>
 <div id="setup"><div style="width:100%;max-width:420px"><h2>Scanner setup</h2><p>Paste the full link that HR gave you (menu: Mobile App Access &gt; Scanner Page Link).</p><textarea id="paste" rows="4" style="width:100%;padding:10px;border-radius:8px;border:0;font-size:14px" placeholder="Paste link here"></textarea><button onclick="setupGo()" style="width:100%;margin-top:10px">Save &amp; start</button><p id="setErr" style="color:#ff6b6b"></p></div></div>
-<div class="top"><b>📷 Scanned today: <span id="cnt">0</span></b><span id="dayLbl" style="font-size:13px;opacity:.8"></span></div>
+<div class="top" id="top"><b>📷 Scanned: <span id="cnt">0</span></b><span style="display:flex;align-items:center;gap:6px"><span id="past" style="display:none;font-size:12px;font-weight:800;color:#ffc107">PAST DATE</span><input type="date" id="dt" onchange="dateChg()" style="padding:6px;border-radius:8px;text-transform:none;flex:none;font-size:14px"></span></div>
 <div class="chips" id="chips"></div>
 <div class="cam"><video id="v" playsinline muted></video><div class="frame"><div></div></div></div>
 <div id="res">Starting camera…</div>
@@ -25,7 +25,7 @@ button{background:#198754;color:#fff;font-weight:700}button.g{background:#444}
 <input id="code" placeholder="Type / scan code" autocapitalize="characters" autocomplete="off"><button onclick="manual()">OK</button><label class="g" style="padding:10px 12px;border-radius:8px;background:#0d6efd;font-weight:700">📸<input type="file" accept="image/*" capture="environment" style="display:none" onchange="photo(this)"></label></div>
 <div id="log"></div>
 <script>
-var API='',KEY='',SUP='',day=0,count=0,last='',lastAt=0,busy={},det=null,cv=document.createElement('canvas'),run=false;
+var API='',KEY='',SUP='',day=0,TODAY='',count=0,last='',lastAt=0,busy={},det=null,cv=document.createElement('canvas'),run=false;
 function ld(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
 function parseLink(t){
   t=String(t||'').trim();var i=t.indexOf('#');if(i>=0)t=t.slice(i+1);
@@ -44,18 +44,21 @@ function setupGo(){var v=document.getElementById('paste').value;if(parseLink(v))
 function call(p){var u=API+'?key='+encodeURIComponent(KEY);for(var k in p)u+='&'+k+'='+encodeURIComponent(p[k]);return fetch(u,{redirect:'follow'}).then(function(r){return r.json()});}
 function res(t,c,s){var e=document.getElementById('res');e.className=c;e.innerHTML=t+(s?'<small>'+s+'</small>':'');}
 function beep(ok){try{var a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=ok?880:220;g.gain.value=.2;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+(ok?.12:.35))}catch(e){}try{navigator.vibrate&&navigator.vibrate(ok?60:[120,60,120])}catch(e){}}
+function dateChg(){var v=document.getElementById('dt').value;if(!v)return;day=parseInt(v.slice(8),10);var p=v!==TODAY;document.getElementById('past').style.display=p?'inline':'none';document.getElementById('top').style.background=p?'#5a4300':'#1b1b1f';last='';res(p?'Recording for '+v:'Ready — scan a card',p?'warn':'');}
+function num(r){return r.no?'#'+esc(r.no)+' · ':'';}
 function esc(s){return String(s||'').replace(/[&<>]/g,function(x){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[x]})}
 function init(){
   call({api:'init'}).then(function(r){
     if(!r.ok){res('❌ '+esc(r.message),'bad');return;}
-    day=r.day;document.getElementById('dayLbl').textContent='Day '+day;
+    day=r.day;TODAY=r.today;var dt=document.getElementById('dt');dt.min=r.first;dt.max=r.last;dt.value=r.today;
     var h='',cur=ld('sup');if(r.supervisors.indexOf(cur)<0)cur='';
-    r.supervisors.forEach(function(s){h+='<div class="chip'+(s===cur?' on':'')+'" onclick="pick(this,\''+s+'\')">'+esc(s)+'</div>';});
+    SUPS=r.supervisors;r.supervisors.forEach(function(s,i){h+='<div class="chip'+(s===cur?' on':'')+'" onclick="pick(this,'+i+')">'+esc(s)+'</div>';});
     document.getElementById('chips').innerHTML=h;SUP=cur;
     res(SUP?'Ready — scan a card':'Choose your name above','');startCam();
   }).catch(function(){res('❌ No connection','bad');});
 }
-function pick(el,s){SUP=s;sv('sup',s);[].forEach.call(document.querySelectorAll('.chip'),function(c){c.classList.remove('on')});el.classList.add('on');res('Ready — scan a card','');}
+var SUPS=[];
+function pick(el,i){var s=SUPS[i];SUP=s;sv('sup',s);[].forEach.call(document.querySelectorAll('.chip'),function(c){c.classList.remove('on')});el.classList.add('on');res('Ready — scan a card','');}
 function startCam(){
   if(!navigator.mediaDevices){res('Camera not available. Use 📸 or type the code.','warn');return;}
   navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(function(st){
@@ -78,17 +81,21 @@ function handle(raw){
   if(!SUP){beep(false);res('Choose your name first','warn');return;}
   var n=Date.now();if(code===last&&n-lastAt<3000)return;last=code;lastAt=n;if(busy[code])return;busy[code]=1;
   res('⏳ Saving…','');
-  call({api:'scan',code:code,sup:SUP,hours:document.getElementById('hrs').value||9}).then(function(r){
+  call({api:'scan',code:code,sup:SUP,day:day,hours:document.getElementById('hrs').value||9}).then(function(r){
     delete busy[code];
     if(r.status==='marked'){count++;document.getElementById('cnt').textContent=count;beep(true);
-      res('✅ '+esc(r.name),r.onLeave?'warn':'ok',r.onLeave?'⚠ On LEAVE today — marked as working ('+r.hours+' h)':'Present · '+r.hours+' h');addLog(r);}
-    else if(r.status==='dup'){beep(false);res('Already marked: '+esc(r.name),'warn',r.hours+' h today');}
+      res('✅ '+num(r)+esc(r.name),r.onLeave?'warn':'ok',r.onLeave?'⚠ On LEAVE this day — marked as working':'Saved to sheet · row '+r.row);addLog(r);}
+    else if(r.status==='dup'){beep(false);res('Already marked: '+num(r)+esc(r.name),'warn','Day '+r.day);}
     else{beep(false);res('❌ '+esc(r.message||'Error'),'bad',r.name?esc(r.name):'');}
   }).catch(function(){delete busy[code];beep(false);res('❌ No connection — scan again','bad','Nothing was saved');});
 }
 function addLog(r){
-  var d=document.createElement('div');d.className='li';d.innerHTML='<span>'+esc(r.name)+' · '+r.hours+' h</span><button>Undo</button>';
-  d.querySelector('button').onclick=function(){var b=this;b.disabled=true;call({api:'undo',code:r.code,sup:SUP}).then(function(x){if(x.ok){d.remove();count--;document.getElementById('cnt').textContent=count;last='';res('↩ Removed '+esc(r.name),'warn');}else{b.disabled=false;res('❌ '+esc(x.message),'bad');}}).catch(function(){b.disabled=false;res('❌ No connection','bad');});};
+  var d=document.createElement('div');d.className='li';d.innerHTML='<span>'+num(r)+esc(r.name)+'</span><button>Undo</button>';
+  d.querySelector('button').onclick=function(){
+    var l=document.getElementById('log'),nx=d.nextSibling;d.remove();count--;document.getElementById('cnt').textContent=count;last='';res('↩ Removed '+num(r)+esc(r.name),'warn');
+    function back(m){l.insertBefore(d,nx);count++;document.getElementById('cnt').textContent=count;res('❌ Undo failed: '+esc(m),'bad','Still marked');}
+    call({api:'undo',code:r.code,sup:SUP,day:r.day}).then(function(x){if(!x.ok)back(x.message||'error');}).catch(function(){back('no connection');});
+  };
   var l=document.getElementById('log');l.insertBefore(d,l.firstChild);
 }
 </script></body></html>
